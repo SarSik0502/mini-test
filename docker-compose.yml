@@ -1,0 +1,202 @@
+name: mini-test
+
+x-app-db: &app-db
+  PGHOST: postgres,postgres-standby
+  PGTARGETSESSIONATTRS: read-write
+  PGDATABASE: mini_test
+  PGUSER: mini_test_app
+  PGPASSWORD: ${MINI_TEST_DB_PASSWORD:-mini-test-local}
+  PGCONNECT_TIMEOUT: 3
+
+x-postgres-node: &postgres-node
+  image: postgres:17-alpine
+  entrypoint: ["/bin/bash", "/ha/start-postgres.sh"]
+  command: ["postgres", "-c", "config_file=/ha/postgresql.conf"]
+  healthcheck:
+    test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "mini_test"]
+    interval: 3s
+    timeout: 3s
+    retries: 25
+
+x-postgres-env: &postgres-env
+  POSTGRES_DB: mini_test
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: ${MINI_TEST_POSTGRES_PASSWORD:-mini-test-admin-local}
+  APP_DB_PASSWORD: ${MINI_TEST_DB_PASSWORD:-mini-test-local}
+  REPLICATION_PASSWORD: ${MINI_TEST_REPLICATION_PASSWORD:-mini-test-repl-local}
+
+x-nats-node: &nats-node
+  image: nats:2.12-alpine
+  command: ["-c", "/etc/nats/mini-test.conf"]
+  healthcheck:
+    test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+    interval: 3s
+    timeout: 2s
+    retries: 10
+
+x-nats-servers: &nats-servers nats://nats:4222,nats://nats-2:4222,nats://nats-3:4222
+
+services:
+  postgres:
+    <<: *postgres-node
+    networks:
+      data:
+        ipv4_address: 172.29.142.3
+    environment:
+      <<: *postgres-env
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+      - ./infra/ha:/ha:ro
+
+  postgres-standby:
+    <<: *postgres-node
+    networks:
+      data:
+        ipv4_address: 172.29.142.8
+    environment:
+      <<: *postgres-env
+      BOOTSTRAP_FROM: postgres
+    volumes:
+      - postgres-standby-data:/var/lib/postgresql/data
+      - ./infra/ha:/ha:ro
+
+  redis:
+    image: redis:7.4-alpine
+    networks:
+      data:
+        ipv4_address: 172.29.142.4
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  nats:
+    <<: *nats-node
+    networks:
+      data:
+        ipv4_address: 172.29.142.5
+    environment:
+      NATS_SERVER_NAME: nats
+    volumes:
+      - nats-data:/data
+      - ./infra/ha/nats.conf:/etc/nats/mini-test.conf:ro
+
+  nats-2:
+    <<: *nats-node
+    networks:
+      data:
+        ipv4_address: 172.29.142.9
+    environment:
+      NATS_SERVER_NAME: nats-2
+    volumes:
+      - nats-2-data:/data
+      - ./infra/ha/nats.conf:/etc/nats/mini-test.conf:ro
+
+  nats-3:
+    <<: *nats-node
+    networks:
+      data:
+        ipv4_address: 172.29.142.10
+    environment:
+      NATS_SERVER_NAME: nats-3
+    volumes:
+      - nats-3-data:/data
+      - ./infra/ha/nats.conf:/etc/nats/mini-test.conf:ro
+
+  migrate:
+    image: postgres:17-alpine
+    networks:
+      data:
+        ipv4_address: 172.29.142.7
+    environment:
+      <<: *app-db
+      PGUSER: postgres
+      PGPASSWORD: ${MINI_TEST_POSTGRES_PASSWORD:-mini-test-admin-local}
+      REPLICATION_PASSWORD: ${MINI_TEST_REPLICATION_PASSWORD:-mini-test-repl-local}
+    volumes:
+      - ./migrations/001-attempts.sql:/migrations/001-attempts.sql:ro
+      - ./infra/ha:/ha:ro
+    command: ["/bin/bash", "/ha/migrate.sh"]
+
+  api:
+    build: ./api
+    networks:
+      web:
+        ipv4_address: 172.29.141.3
+      data:
+        ipv4_address: 172.29.142.2
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    environment:
+      <<: *app-db
+      REDIS_HOST: redis
+      NATS_URL: *nats-servers
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - --max-time
+        - "2"
+        - http://127.0.0.1:8000/api/hello
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+
+  worker:
+    build: ./api
+    init: true
+    networks:
+      data:
+        ipv4_address: 172.29.142.6
+    command: ["/usr/local/bin/mini-test-worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *app-db
+      NATS_URL: *nats-servers
+
+  frontend:
+    build: ./frontend
+    networks:
+      web:
+        ipv4_address: 172.29.141.2
+    depends_on:
+      api:
+        condition: service_healthy
+        restart: true
+    ports:
+      - "127.0.0.1:8080:80"
+
+networks:
+  web:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: mt-web
+    ipam:
+      config:
+        - subnet: 172.29.141.0/24
+  data:
+    driver: bridge
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.name: mt-data
+    ipam:
+      config:
+        - subnet: 172.29.142.0/24
+
+volumes:
+  postgres-data:
+  postgres-standby-data:
+  nats-data:
+  nats-2-data:
+  nats-3-data:

@@ -1,0 +1,12 @@
+[Unit]
+Description=Mini-test Docker network firewall
+Before=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nft -f /etc/mini-test.nft
+ExecReload=/usr/sbin/nft -f /etc/mini-test.nft
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

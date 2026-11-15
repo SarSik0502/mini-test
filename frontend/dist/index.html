@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Редактор вопросов · Мини-тест</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js?v=2" defer></script>
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-header">
+        <p class="subject">Мини-тест / Сетевая безопасность</p>
+        <h1>Редактор вопросов</h1>
+        <p class="page-link"><a href="/quiz.html">Пройти тест →</a></p>
+      </header>
+
+      <p class="feedback page-feedback" id="feedback" role="status"></p>
+      <div class="workspace">
+        <section class="panel" aria-labelledby="questions-title">
+          <h2 id="questions-title">Вопросы теста</h2>
+          <p class="feedback" id="list-message" role="status">Загружаем вопросы…</p>
+          <button type="button" class="secondary" id="reload" hidden>Повторить загрузку</button>
+          <ul id="questions" class="questions"></ul>
+        </section>
+
+        <section class="panel" aria-labelledby="form-title">
+          <h2 id="form-title">Новый вопрос</h2>
+          <form id="question-form">
+            <fieldset id="question-fields">
+              <label class="field" for="prompt">Текст вопроса
+                <textarea id="prompt" rows="3" maxlength="500" required></textarea>
+              </label>
+              <label class="field" for="option-1">Вариант 1
+                <input id="option-1" class="question-option" type="text" maxlength="200" required>
+              </label>
+              <label class="field" for="option-2">Вариант 2
+                <input id="option-2" class="question-option" type="text" maxlength="200" required>
+              </label>
+              <label class="field" for="option-3">Вариант 3
+                <input id="option-3" class="question-option" type="text" maxlength="200" required>
+              </label>
+              <label class="field" for="correct-option">Правильный ответ
+                <select id="correct-option" required>
+                  <option value="" disabled selected>Выберите вариант</option>
+                  <option value="1">Вариант 1</option>
+                  <option value="2">Вариант 2</option>
+                  <option value="3">Вариант 3</option>
+                </select>
+              </label>
+              <div class="actions">
+                <button type="submit" id="save">Добавить вопрос</button>
+                <button type="button" class="secondary" id="cancel" hidden>Отменить</button>
+              </div>
+            </fieldset>
+          </form>
+        </section>
+      </div>
+    </main>
+
+    <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-prompt">
+      <h2 id="delete-title">Удалить вопрос?</h2>
+      <p class="answer" id="delete-prompt"></p>
+      <form method="dialog" class="actions">
+        <button value="cancel" class="secondary" autofocus>Отменить</button>
+        <button value="delete" class="secondary danger">Удалить вопрос</button>
+      </form>
+    </dialog>
+
+    <template id="question-template">
+      <li class="question">
+        <h3 class="question-prompt"></h3>
+        <p class="answer"></p>
+        <div class="actions">
+          <button type="button" class="secondary edit">Изменить</button>
+          <button type="button" class="secondary danger delete">Удалить</button>
+        </div>
+      </li>
+    </template>
+  </body>
+</html>
